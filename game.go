@@ -3,28 +3,25 @@ package snake
 import (
 	"fmt"
 	"image"
-	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
 	"os"
+	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
-type Point struct {
-	x, y float32
-}
-
-type Snake struct {
-	Head  Point
-	parts []*Point
-}
-
 type Game struct {
-	Snakes       []*Snake
+	Snake        Snake
 	screenWidth  int
 	screenHeight int
+
+	cameraX float64
+	cameraY float64
+
+	keys []ebiten.Key
 
 	// var red = loadSprite("red.png")
 	bgTile *ebiten.Image
@@ -39,8 +36,12 @@ func NewGame(screenWidth, screenHeight float64) *Game {
 	g := Game{
 		screenWidth:  w,
 		screenHeight: h,
+		Snake: Snake{
+			size: 5,
+		},
 	}
 
+	g.Snake.head = &g.Snake.body[0]
 	fmt.Println("Virtual size", w, h)
 	g.loadAssets()
 
@@ -48,12 +49,39 @@ func NewGame(screenWidth, screenHeight float64) *Game {
 }
 
 func (g *Game) Update() error {
+	g.keys = inpututil.PressedKeys()
+	g.Snake.hmom = 0
+	g.Snake.vmom = 0
+	if ebiten.IsKeyPressed(ebiten.KeyLeft) {
+		g.Snake.hmom = -3
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyRight) {
+		g.Snake.hmom = 3
+	}
+
+	if ebiten.IsKeyPressed(ebiten.KeyUp) {
+		g.Snake.vmom = -3
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyDown) {
+		g.Snake.vmom = 3
+	}
+
+	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+		g.Snake.Grow()
+	}
+	g.Snake.Move()
+
+	// Seek the camera towards the snake
+	// TODO: scale to tps
+	g.cameraX += ((g.Snake.head.X - g.cameraX) / 20.0)
+	g.cameraY += ((g.Snake.head.Y - g.cameraY) / 20.0)
 	return nil
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
 	g.drawBackground(screen)
-	g.drawSnakes(screen)
+	g.drawSnake(&g.Snake, screen)
+	g.drawDebug(screen)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -70,13 +98,26 @@ func (g *Game) loadAssets() {
 	op.GeoM.Scale(0.5, 0.5)
 	op.Filter = ebiten.FilterLinear
 	g.bgTile.DrawImage(tile, &op)
-	red := color.RGBA{255, 0, 0, 64}
-	ebitenutil.DrawLine(g.bgTile, 0, 0, float64(w), 0, red)
-	ebitenutil.DrawLine(g.bgTile, float64(w), 0, float64(w), float64(h), red)
-	ebitenutil.DrawLine(g.bgTile, float64(w), float64(h), 0, float64(h), red)
-	ebitenutil.DrawLine(g.bgTile, 0, float64(h), 0, 0, red)
+	// red := color.RGBA{255, 0, 0, 64}
+	// ebitenutil.DrawLine(g.bgTile, 0, 0, float64(w), 0, red)
+	// ebitenutil.DrawLine(g.bgTile, float64(w), 0, float64(w), float64(h), red)
+	// ebitenutil.DrawLine(g.bgTile, float64(w), float64(h), 0, float64(h), red)
+	// ebitenutil.DrawLine(g.bgTile, 0, float64(h), 0, 0, red)
 	// op.GeoM.Scale()
 	// g.bgTile.DrawImage(tile, &op)
+}
+
+func (g *Game) drawDebug(screen *ebiten.Image) {
+	keys := []string{}
+	for _, p := range g.keys {
+		keys = append(keys, p.String())
+	}
+	ebitenutil.DebugPrint(screen, fmt.Sprintf("Snake: %0.2f, %0.f, %0.2f\nCamera: %0.2f,%0.2f\nKeys: %s\nFPS: %0.2f",
+		g.Snake.head.X, g.Snake.head.Y, g.Snake.size,
+		g.cameraX, g.cameraY,
+		strings.Join(keys, ", "),
+		ebiten.CurrentFPS(),
+	))
 }
 
 func loadSprite(name string) *ebiten.Image {
@@ -95,16 +136,18 @@ func loadSprite(name string) *ebiten.Image {
 var px, py float64
 
 func (g *Game) drawBackground(screen *ebiten.Image) {
-	px -= 1
-	py -= 1
 	// x += 1
 	// Draw the tiled background
 	w, h := g.bgTile.Size()
+	// scale := 1 / (g.Snake.size * 0.01)
+	// fw, fh := float64(w)*scale, float64(h)*scale
+	// w, h = int(fw), int(fh)
 	maxX, maxY := screen.Size()
 	ops := ebiten.DrawImageOptions{}
-	for x := int(px)%w - w; x < maxX; x += w {
-		for y := int(py)%h - h; y < maxY; y += h {
+	for x := int(-g.cameraX)%w - w; x < maxX; x += w {
+		for y := int(-g.cameraY)%h - h; y < maxY; y += h {
 			ops.GeoM.Reset()
+			// ops.GeoM.Scale(scale, scale)
 			ops.GeoM.Translate(float64(x), float64(y))
 			screen.DrawImage(g.bgTile, &ops)
 		}
@@ -120,8 +163,30 @@ func (g *Game) drawBackground(screen *ebiten.Image) {
 	// screen.DrawImage(tile, &ops)
 }
 
-func (g *Game) drawSnakes(screen *ebiten.Image) {
-	// ops := ebiten.DrawImageOptions{}
-	// ops.GeoM.Scale(0.5, 0.5)
-	// screen.DrawImage(red, &ops)
+func (g *Game) drawSnake(s *Snake, screen *ebiten.Image) {
+	red := loadSprite("red.png")
+	w, h := red.Size()
+	fw, fh := float64(w), float64(h)
+	scale := 0.25 + (s.size * 0.01)
+	fmt.Println(scale)
+	scaledWidth := fw * scale
+	scaledHeight := fw * scale
+
+	fmt.Println(fw, fh)
+	for i := g.Snake.length() - 1; i >= 0; i-- {
+		p := g.Snake.body[i]
+		ops := ebiten.DrawImageOptions{}
+		ops.GeoM.Scale(scale, scale)
+		ops.GeoM.Translate(-scaledWidth/2, -scaledHeight/2)
+
+		// Move the segment to its world coordinates
+		ops.GeoM.Translate(p.X, p.Y)
+		// Move the snake back into screen coordinates
+		ops.GeoM.Translate(-g.cameraX, -g.cameraY)
+		// Center the camera
+		ops.GeoM.Translate(float64(g.screenWidth/2), float64(g.screenHeight/2))
+
+		screen.DrawImage(red, &ops)
+	}
+
 }
