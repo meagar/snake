@@ -2,15 +2,23 @@ package snake
 
 import (
 	"fmt"
+	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
 	"math/rand"
 	"strings"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
+
+func init() {
+	seed := time.Now().Unix()
+	fmt.Println("Seeding rand:", seed)
+	rand.Seed(seed)
+}
 
 type Pill struct {
 	Point
@@ -168,6 +176,32 @@ func loadSprite(name string) *ebiten.Image {
 	// return ebiten.NewImageFromImage(img)
 }
 
+func createSphere() *ebiten.Image {
+	c := color.RGBA{
+		uint8(rand.Intn(200)),
+		uint8(rand.Intn(200)),
+		uint8(rand.Intn(200)),
+		255}
+	mask := loadSprite("circle_mask.png")
+	w, h := mask.Size()
+	dest := ebiten.NewImage(w, h)
+	for x := 0; x < w; x++ {
+		for y := 0; y < h; y++ {
+			_, _, _, a := mask.At(x, y).RGBA()
+			c.A = byte(a)
+			// c.R = 255
+			dest.Set(x, y, c)
+		}
+	}
+
+	shadow := loadSprite("shadow.png")
+	dest.DrawImage(shadow, nil)
+
+	highlight := loadSprite("highlight.png")
+	dest.DrawImage(highlight, nil)
+	return dest
+}
+
 // var x float64
 var px, py float64
 
@@ -203,8 +237,12 @@ func (g *Game) drawBackground(screen *ebiten.Image) {
 
 var drawSnakeOp ebiten.DrawImageOptions
 
+var red *ebiten.Image
+
 func (g *Game) drawSnake(s *Snake, screen *ebiten.Image) {
-	red := loadSprite("red.png")
+	if red == nil {
+		red = createSphere() //loadSprite("red.png")
+	}
 	w, h := red.Size()
 	fw, fh := float64(w), float64(h)
 	scale := 0.25 + (s.size * 0.001)
