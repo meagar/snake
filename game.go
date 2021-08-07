@@ -164,6 +164,7 @@ func (g *Game) drawPills(screen *ebiten.Image) {
 
 func loadSprite(name string) *ebiten.Image {
 	img, _, err := ebitenutil.NewImageFromFile("assets/" + name)
+	fmt.Println("Loading asset", name)
 	// fh, err := os.OpenFile("assets/"+name, os.O_RDONLY, 0600)
 	if err != nil {
 		panic(err)
