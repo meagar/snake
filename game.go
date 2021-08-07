@@ -37,7 +37,9 @@ func NewGame(screenWidth, screenHeight float64) *Game {
 		screenWidth:  w,
 		screenHeight: h,
 		Snake: Snake{
-			size: 5,
+			size:    5,
+			heading: 0,
+			speed:   1,
 		},
 	}
 
@@ -50,25 +52,17 @@ func NewGame(screenWidth, screenHeight float64) *Game {
 
 func (g *Game) Update() error {
 	g.keys = inpututil.PressedKeys()
-	g.Snake.hmom = 0
-	g.Snake.vmom = 0
 	if ebiten.IsKeyPressed(ebiten.KeyLeft) {
-		g.Snake.hmom = -3
+		g.Snake.TurnLeft()
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyRight) {
-		g.Snake.hmom = 3
-	}
-
-	if ebiten.IsKeyPressed(ebiten.KeyUp) {
-		g.Snake.vmom = -3
-	}
-	if ebiten.IsKeyPressed(ebiten.KeyDown) {
-		g.Snake.vmom = 3
+		g.Snake.TurnRight()
 	}
 
 	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 		g.Snake.Grow()
 	}
+
 	g.Snake.Move()
 
 	// Seek the camera towards the snake
@@ -152,6 +146,7 @@ func (g *Game) drawBackground(screen *ebiten.Image) {
 			screen.DrawImage(g.bgTile, &ops)
 		}
 	}
+
 	// ops.GeoM.Scale(0.5, 0.5)
 
 	// w, _ := g.bgTile.Size()
@@ -167,15 +162,15 @@ func (g *Game) drawSnake(s *Snake, screen *ebiten.Image) {
 	red := loadSprite("red.png")
 	w, h := red.Size()
 	fw, fh := float64(w), float64(h)
-	scale := 0.25 + (s.size * 0.01)
-	fmt.Println(scale)
+	scale := 0.25 + (s.size * 0.001)
 	scaledWidth := fw * scale
-	scaledHeight := fw * scale
+	scaledHeight := fh * scale
 
-	fmt.Println(fw, fh)
-	for i := g.Snake.length() - 1; i >= 0; i-- {
+	ops := ebiten.DrawImageOptions{}
+	ops.Filter = ebiten.FilterLinear
+	for i := g.Snake.Length() - 1; i >= 0; i-- {
 		p := g.Snake.body[i]
-		ops := ebiten.DrawImageOptions{}
+		ops.GeoM.Reset()
 		ops.GeoM.Scale(scale, scale)
 		ops.GeoM.Translate(-scaledWidth/2, -scaledHeight/2)
 
